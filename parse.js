@@ -43,7 +43,7 @@ function parse(data) {
 				var token = getRawToken();
 				token.is = tokenIs;
 
-				currToken && (token.comments_after = currToken.comments_before);
+				currToken && (currToken.comments_after = token.comments_before);
 
 				// Probably incorrect automatic semicolon insertion
 				// TODO: Try to fix this, or remove it completely if ASI is superfluous
@@ -300,6 +300,8 @@ function parse(data) {
 		// iife
 		else if ((T.curr.is('punc', '(') || T.curr.is('operator', OPERATORS_RTL)) && T.peek.is('keyword', 'function')) {
 			T.next(); // skip operator
+
+			// merge comments on punctuation/operator with comments on function
 			T.curr.comments_before = T.prev.comments_before.concat(T.curr.comments_before);
 			statement.type = 'iife';
 			statement.value = readStructure();
@@ -374,6 +376,8 @@ function parse(data) {
 			T.next(); // skip {
 
 			structure.value.body = parseFunctionBody();
+
+			// } skipped at end of conditional
 		}
 
 		// expression
@@ -386,8 +390,23 @@ function parse(data) {
 		// array literal
 		else if (T.curr.is('punc', '[')) {
 			structure.type = 'array';
-			structure.value = T.nextUntil('punc', ']');
-			console.log('array literal not implemented');
+			structure.value = [];
+			// TODO: Improve consistency of complex object comments
+			structure.comments_before = T.curr.comments_before;
+
+			T.next(); // skip [
+
+			while (!T.curr.is('punc', ']')) {
+				structure.value.push(readStructure());
+
+				console.dir(T.curr);
+
+				if (T.curr.is('punc', ',')) {
+					T.next(); // skip ,
+				}
+			}
+
+			// ] skipped at end of conditional
 		}
 
 		// object literal

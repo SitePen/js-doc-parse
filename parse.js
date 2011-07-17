@@ -1,182 +1,72 @@
-var tokenizer = require('uglify-js').parser.tokenizer,
-	arrayToHash = require('uglify-js').parser.array_to_hash,
-	fs = require('fs');
+define([
+	'dojo/_base/kernel',
+	'./lib/Module',
+	'./lib/File',
+	'./lib/Scope',
+	'./lib/Value',
+	'./lib/Reference',
+	'./lib/scrollableTokenizer',
+	'./lib/env',
+	'./lib/callHandlers',
+	'./lib/node!util',
+	'./lib/node!fs',
+	'./lib/console'
+], function (dojo, Module, File, Scope, Value, Reference, scrollableTokenizer, env, callHandlers, util, fs) {
+	// TODO: Get from config file/build script/something else
+	env.config = {
+		baseUrl: '/mnt/devel/web/dojo-trunk/',
 
-// PARSER:
-// 1. build tree
-// 2. hoist variable declarations within each function block
-// 3. build symbol map for each block
-//
-// DOC BUILDER:
-// 1. handle mixin to modules
-// 2. handle dojo.declare of modules
-// 3. handle return objects or functions as module
-// 4. handle assignment onto modules from within other modules
-
-function parse(data) {
-	// These operators can be prefixed to an otherwise unremarkable function definition to turn it into a function
-	// expression that can be immediately invoked
-	var OPERATORS_RTL = arrayToHash([ '!', '~', '+', '-', 'typeof', 'void', 'delete' ]),
-
-		OPERATORS_ASSIGN = arrayToHash([ '=', '+=', '-=', '/=', '*=', '%=', '>>=', '<<=', '>>>=', '|=', '^=', '&=' ]),
-
-		tree = [],
-		fuid = 0,
-		T = (function () {
-			var getRawToken = tokenizer(data),
-				prevToken,
-				currToken,
-				nextToken;
-
-			/**
-			 * Tests whether a token matches the specified type and (optional) value.
-			 */
-			function tokenIs(type, value) {
-				return this.type === type &&
-					(value == null || (typeof value === 'object' ? value[this.value] : this.value === value));
-			}
-
-			/**
-			 * Gets the next token from the tokenizer and decorates it with the tokenIs function.
-			 */
-			function getToken() {
-				var token = getRawToken();
-				token.is = tokenIs;
-
-				currToken && (currToken.comments_after = token.comments_before);
-
-				// Probably incorrect automatic semicolon insertion
-				// TODO: Try to fix this, or remove it completely if ASI is superfluous
-/*				if (!token.is('punc', ';') && !token.is('operator') && currToken && !currToken.is('punc', ';') &&
-					(token.nlb || token.is('punc', '}'))) {
-
-					nextToken = token;
-					token = {
-						type: 'punc',
-						value: ';',
-						line: token.line,
-						col: token.col,
-						pos: 'asi',
-						nlb: false,
-						is: tokenIs
-					};
-				}*/
-
-				return token;
-			}
-
-			return {
-				/**
-				 * Gets the previous token without rewinding the tokenizer.
-				 */
-				get prev() {
-					return prevToken;
-				},
-
-				/**
-				 * Gets the next token without forwarding the tokenizer.
-				 */
-				get peek() {
-					return nextToken || (nextToken = getToken());
-				},
-
-				/**
-				 * Gets the current token.
-				 */
-				get curr() {
-					return currToken || T.next();
-				},
-
-				/**
-				 * Forwards the tokenizer and returns the next token.
-				 */
-				next: function () {
-					prevToken = currToken;
-
-					if (nextToken) {
-						currToken = nextToken;
-						nextToken = undefined;
-					}
-					else {
-						currToken = getToken();
-					}
-
-					return currToken;
-				},
-
-				/**
-				 * Checks that the current token matches the given type and optional value, and throws an error
-				 * if it does not.
-				 */
-				expect: function (type, value) {
-					if (!T.curr.is(type, value)) {
-						throw new Error('Expected ' + type + ' ' + value + '; got ' + T.curr.type + ' ' + T.curr.value +
-										' at ' + (T.curr.line + 1) + ':' + (T.curr.col + 1));
-					}
-				},
-
-				/**
-				 * Fast forwards through the list of tokens until a token matching the given type and optional
-				 * value is discovered. Leaves the tokenizer pointing at the first token after the matched token.
-				 * Returns an array of tokens that were forwarded through, excluding the initial token and the
-				 * matched token.
-				 */
-				nextUntil: function (type, value) {
-					var tokens = [];
-
-					while (this.next() && !this.curr.is(type, value)) {
-						if (this.curr.is('eof')) {
-							throw new Error('Unexpected end of file at ' + (this.curr.line + 1) + ':' + (this.curr.col + 1));
-						}
-
-						if (this.curr.is('punc', '{')) {
-							tokens.push(this.nextUntil('punc', '}'));
-						}
-						else if (this.curr.is('punc', '[')) {
-							tokens.push(this.nextUntil('punc', ']'));
-						}
-						else if (this.curr.is('punc', '(')) {
-							tokens.push(this.nextUntil('punc', ')'));
-						}
-						else {
-							tokens.push(this.curr);
-						}
-					}
-
-					this.next(); // skip closing token
-
-					return tokens;
-				}
-			}
-		}());
+		prefixMap: {
+			dojo: 'dojo',
+			dijit: 'dijit',
+			dojox: 'dojox'
+		}
+	};
 
 	/**
-	 * Reads an entire list of names with refinements and returns it as an array of tokens. Leaves the tokenizer
-	 * pointing at the first token after the symbol.
-	 * TODO: Look for @name hints
+	 * Step 1: Find and add function parameters to scope.
+	 * Step 2: Find all var declarations (and other scopes inside the current scope?) and add them to scope.
+	 * Step 3: Consume all instructions inside the function body, descending into scopes as necessary, and making
+	 *         function calls as necessary.
+	 * Step 4: Perform fake function call.
+	 * Step 5: Resolve Variable values.
+	 * Step 6: Mix in Variable properties to Value.
 	 */
-	function readSymbol() {
-		var symbol = [];
 
-		if (!T.curr.is('name')) {
-			throw new Error('Not a valid symbol');
-		}
+	var token;
 
-		symbol.push(T.curr);
-		T.next();
+	/**
+	 * Reads a complete accessor name and returns it as an array of its parts.
+	 */
+	function readName() {
+		var name = [ token.value ], isUnresolvable = false;
+
+		// TODO: look to jsdoc for @name hint
+
+		token.next();
 
 		while (true) {
 			// foo.bar
-			if (T.curr.is('punc', '.')) {
-				T.next(); // skip .
-				symbol.push(T.curr);
-				T.next();
+			if (token.is('punc', '.')) {
+				token.next(); // skip .
+				name.push(token.value);
+				token.next(); // skip identifier
 			}
 
 			// foo['bar']
-			else if (T.curr.is('punc', '[')) {
-				// nextUntil skips both [ and ]
-				symbol.push(T.nextUntil('punc', ']'));
+			else if (token.is('punc', '[')) {
+				token.next(); // skip [
+
+				// XXX: complex expressions are not supported at this time but maybe a bit more can be done to support
+				// them later
+				if (token.is('string') && token.peek().is('punc', ']')) {
+					name.push(token.value);
+					token.next(2); // skip string & ]
+				}
+				else {
+					isUnresolvable = true;
+					token.nextUntil('punc', ']');
+				}
 			}
 
 			// symbol definition is done, or someone did something invalid
@@ -185,389 +75,280 @@ function parse(data) {
 			}
 		}
 
-		return symbol;
+		return isUnresolvable ? null : name;
 	}
 
-	/**
-	 * Reads a list of function arguments and returns it as an array. Leaves the tokenizer pointing at the first token
-	 * after the closing parenthesis of the arguments list.
-	 */
-	function readArguments() {
-		var args = [];
+	function readProgram() {
+		// Step 2, var declarations
+		do {
+			if (token.is('keyword', 'function')) {
+				// function declarations
+				if (!token.peek(-1).is('(') && token.peek(1).is('name')) {
+					token.next();
+					env.scope.addVariable(token.value);
+				}
 
-		T.expect('punc', '(');
-		T.next(); // skip (
-
-		while (!T.curr.is('punc', ')')) {
-			if (T.curr.is('eof')) {
-				throw new Error('Unexpected end of file at ' + (T.curr.line + 1) + ':' + (T.curr.col + 1));
+				// TODO: read a Statement instead
+				token.nextUntil('punc', '{').nextUntil('punc', '}');
 			}
 
-			args.push(readStructure());
+			else if (token.is('keyword', 'var')) {
+				do {
+					env.scope.addVariable(token.next().value);
 
-			if (T.curr.is('punc', ',')) {
-				T.next(); // skip , but not )
+					if (token.peek().is('operator', '=')) {
+						// TODO: read an AssignmentExpression instead
+						token.nextUntil('punc', {',':1, ';':1});
+					}
+					else {
+						token.next();
+					}
+				} while (token.is('punc', ','));
 			}
-		}
+		} while (!token.next().is('eof'));
 
-		T.next(); // skip )
+		token.rewind();
 
-		return args;
-	}
+		// Step 3, consume block
+		do {
+			var lhsName, assignTo, startIndex, fn;
 
-	/**
-	 * Reads a statement from a function body. Only function calls, variable declarations, and assignments are parsed;
-	 * everything else is ignored. Leaves the tokenizer pointing at the first token after the statement. Returns a
-	 * single statement or an array of statements.
-	 */
-	function readStatement() {
-		// TODO: Don’t predefine what the statement is going to look like here; use a constructor instead
-		var statement = {
-			type: undefined, // 'call', 'assign', 'var', 'return'
-			symbol: undefined, // name of object that has been called or assigned
-			value: undefined // for calls, the list of arguments; for assignments, the assigned value;
-			                 // for variable definitions, not sure yet TODO
-		};
-
-		// function call or assignment
-		if (T.curr.is('name')) {
-			statement.symbol = readSymbol();
-
-			// function call
-			if (T.curr.is('punc', '(')) {
-				console.log('CALL:', statement.symbol.map(function reduce(item) {
-					return Array.isArray(item) ? '[' + item.map(reduce).join('.') + ']' : item.value;
-				}).join('.'));
-
-				statement.type = 'call';
-				statement.value = readArguments();
+			// anonymous function constructor
+			if (token.is('keyword', 'new') && token.peek().is('keyword', 'function')) {
+				console.log('XXX new function constructor');
 			}
+			else if (token.is('name')) {
+				if (token.peek(-1).is('keyword', 'function')) {
+					// function declaration
+					if (!token.peek(-2).is('punc', '(')) {
+						startIndex = token.index - 1;
+						lhsName = readName();
 
-			// assignment
-			else if (T.curr.is('operator', OPERATORS_ASSIGN)) {
-				T.next(); // skip assignment operator
+						token.seekTo(startIndex);
+						env.scope.setVariableValue(lhsName, readFunction(true));
+					}
+					// immediately invoked function expression
+					else {
+						token.seekTo(token.index - 1);
+						fn = readFunction();
 
-				statement.type = 'assign';
-				statement.value = readStructure();
-			}
+						if (token.is('punc', ')')) {
+							token.next();
+						}
 
-			// something else weird
-			else {
-				var e = new Error('I really don’t know what to do with ' + T.curr.type + ' value ' + T.curr.value + ' at ' + T.curr.line + ':' + T.curr.col);
-				e.token = T.curr;
-				throw e;
-			}
-		}
-
-		// function declaration
-		else if (T.curr.is('keyword', 'function')) {
-			var functionValue = readStructure();
-
-			statement = [
-				{ type: 'var', symbol: functionValue.name },
-				{ type: 'assign', symbol: functionValue.name, value: functionValue }
-			];
-		}
-
-		// variable declaration
-		else if (T.curr.is('keyword', 'var')) {
-			// returning an array of statements is cool TODOC
-			statement = [];
-
-			T.next(); // skip keyword 'var'
-			T.expect('name');
-
-			// merge comments on 'var' keyword with comments on first defined symbol
-			T.curr.comments_before = T.prev.comments_before.concat(T.curr.comments_before);
-
-			do {
-				if (T.peek.is('operator', '=')) {
-					var innerStatement = readStatement();
-					statement.push({
-						type: 'var',
-						symbol: innerStatement.symbol
-					}, innerStatement);
+						call(fn, readArgumentList());
+					}
 				}
 				else {
-					statement.push({
-						type: 'var',
-						symbol: readSymbol()
-					});
+					lhsName = readName();
+
+					// assignment
+					if (token.is('operator', '=')) {
+						token.next();
+
+						env.scope.setVariableValue(lhsName, readStructure());
+					}
+
+					// function call
+					else if (token.is('punc', '(')) {
+						call(lhsName, readArgumentList());
+					}
 				}
-			} while (T.curr.is('punc', ',') && T.next());
-		}
-
-		// iife
-		else if ((T.curr.is('punc', '(') || T.curr.is('operator', OPERATORS_RTL)) && T.peek.is('keyword', 'function')) {
-			T.next(); // skip operator
-
-			// merge comments on punctuation/operator with comments on function
-			T.curr.comments_before = T.prev.comments_before.concat(T.curr.comments_before);
-			statement.type = 'iife';
-			statement.value = readStructure();
-
-			if (T.curr.is('punc', ')')) {
-				T.next(); // skip ) in the case of a call like (function () {})()
 			}
+		} while (!token.next().is('eof'));
 
-			statement.args = readArguments();
+		if (env.scope === env.globalScope) {
+			console.log('Block read complete');
+			console.log(util.inspect(env.globalScope, false, null));
 		}
-
-		// return value
-		else if (T.curr.is('keyword', 'return')) {
-			T.next(); // skip keyword 'return'
-			statement.type = 'return';
-			statement.value = readStructure();
-		}
-
-		// something we do not care about
-		else {
-			console.log('skipping', T.curr.type, T.curr.value);
-			T.next(); // skip token
-			return [];
-		}
-
-		return statement;
 	}
 
-	/**
-	 * Reads literal data structures. Leaves the tokenizer pointing at the first token after the structure.
-	 */
 	function readStructure() {
-		// Whether or not to skip the last token or not; keeps refs from stepping too far
-		var skipLast = true,
-			structure = {
-				type: undefined, // function, array, object, boolean, null, undefined, string, num, regexp, name, ref
-				value: undefined,
-				name: undefined // for function declarations
-			};
+		var name;
 
-		// function literal
-		if (T.curr.is('keyword', 'function')) {
-			structure.type = 'function';
-			// TODO: Figure out how to transplant comments from earlier punctuation or operators
-			structure.comments_before = T.curr.comments_before.slice(0);
-			structure.value = {
-				params: [],
-				body: undefined
-			};
+		// structure is a function
+		if (token.is('keyword', 'function')) {
+			return readFunction();
+		}
 
-			if (T.peek.is('name')) {
-				T.next(); // skip 'function' keyword
-				structure.name = T.curr.value;
-			}
-			else {
-				structure.name = '*anon' + (++fuid);
+		// structure is a reference to another variable
+		else if (token.is('name')) {
+			var index = token.index;
+			name = readName();
+
+			// value is a complex expression XXX: maybe do more later
+			if (token.is('operator') && !token.is('operator', '=')) {
+				return null;
 			}
 
-			T.next(); // skip function name or 'function' keyword
-			T.expect('punc', '(');
+			// value is a reference to another variable; need to rewind so that the referenced variable can be picked
+			// up and defined
+			if (token.is('operator', '=')) {
+				token.seekTo(index);
+			}
 
-			while (T.next() && !T.curr.is('punc', ')')) {
-				if (T.curr.is('punc', ',')) {
-					continue;
+			return Reference(name);
+		}
+
+		// structure is an empty array literal
+		else if (token.is('punc', '[') && token.peek().is('punc', ']')) {
+			return Value({ type: 'array', value: [] });
+		}
+
+		// structure is an array literal XXX: this seems differently weird from everything else
+		else if (token.is('punc', '[')) {
+			var array = [];
+
+			token.next();
+			do {
+				array.push(readStructure());
+
+				token.expect('punc', { ',': true, ']': true });
+				if (token.is('punc', ',')) {
+					token.next();
 				}
+			} while (!token.is('punc', ']'));
 
-				structure.value.params.push(T.curr);
+			token.next();
+
+			return Value({
+				type: 'array',
+				value: array
+			});
+		}
+
+		// structure is an empty object literal
+		else if (token.is('punc', '{') && token.peek(1).is('punc', '}')) {
+			return Value({
+				type: 'object'
+			});
+		}
+
+		// structure is an object literal
+		else if (token.is('punc', '{') && token.peek(1).is('name') && token.peek(2).is('punc', ':') &&
+		         !token.peek(3).is('keyword', { 'for': true, 'do': true, 'while': true })) {
+
+			var obj = {};
+
+			token.next();
+
+			do {
+				name = token.value;
+				token.next();
+				token.expect('punc', ':');
+				token.next();
+
+				obj[name] = readStructure();
+
+				token.expect('punc', { ',': true, '}': true });
+				if (token.is('punc', ',')) {
+					token.next();
+				}
+			} while (!token.is('punc', '}'));
+
+			return Value({
+				type: 'object',
+				properties: obj
+			});
+		}
+
+		// structure is an object instance
+		else if (token.is('keyword', 'new')) {
+			token.next();
+			console.log('XXX: object instance');
+		}
+
+		// structure is a string, number, boolean, regexp, null, or undefined
+		else if (token.is('string') || token.is('num') || token.is('regexp') || token.is('atom')) {
+
+			// value is a complex expression XXX: maybe do more later
+			if (token.peek().is('operator')) {
+				return null;
 			}
 
-			T.next(); // skip )
-			T.expect('punc', '{');
-			T.next(); // skip {
+			var value = Value({
+				type: token.type,
+				value: token.value
+			});
 
-			structure.value.body = parseFunctionBody();
+			token.next();
 
-			// } skipped at end of conditional
+			return value;
 		}
 
-		// expression
-		else if (T.curr.is('punc', '(')) {
-			structure.type = 'expression';
-			structure.value = T.nextUntil('punc', ')');
-			console.log('expression not implemented');
+		console.warn('Could not read structure ' + token.type + ' ' + token.value + ' at ' + token.line + ':' + token.column);
+		return null;
+	}
+
+	function readFunction(isDeclaration) {
+		env.pushScope();
+
+		token.expect('keyword', 'function');
+		token.next();
+
+		// parent should have put this in calleeName
+		if (token.is('name')) {
+			if (token.value !== calleeName) {
+				throw Error('calleeName missing');
+			}
+
+			token.next();
 		}
 
-		// array literal
-		else if (T.curr.is('punc', '[')) {
-			structure.type = 'array';
-			structure.value = [];
-			// TODO: Improve consistency of complex object comments
-			structure.comments_before = T.curr.comments_before;
+		// immediately invoked function expression
+		if (assignTo === undefined) {
+			readParameterList();
+			readFunctionBody();
+		}
 
-			T.next(); // skip [
+		env.popScope();
+	}
 
-			while (!T.curr.is('punc', ']')) {
-				structure.value.push(readStructure());
+/*
+	function readFunctionBody() {
+		var fn, varName;
 
-				console.dir(T.curr);
+		do {
+			if (token.is('keyword', 'function')) {
+				// (function () {}()) or (function () {})()
+				if (token.peek(-1).is('punc', '(')) {
+					var fn = readFunction();
 
-				if (T.curr.is('punc', ',')) {
-					T.next(); // skip ,
+					if (token.is('punc', ')')) {
+						token.next();
+					}
+
+					handleCall(fn, readArgumentsList());
+				}
+				// function foo() {}
+				else if (token.peek(1).is('name')) {
+					readFunction();
 				}
 			}
-
-			// ] skipped at end of conditional
-		}
-
-		// object literal
-		else if (T.curr.is('punc', '{')) {
-			structure.type = 'object';
-			structure.value = T.nextUntil('punc', '}');
-			console.log('object literal not implemented');
-		}
-
-		// boolean literal
-		else if (T.curr.is('name', 'true') || T.curr.is('name', 'false')) {
-			structure.type = 'boolean';
-			structure.value = !!T.curr.value;
-		}
-
-		// null primitive
-		else if (T.curr.is('name', 'null')) {
-			structure.type = 'null';
-			structure.value = null;
-		}
-
-		// undefined primitive
-		else if (T.curr.is('name', 'undefined')) {
-			structure.type = 'undefined';
-			structure.value = undefined;
-		}
-
-		// reference
-		else if (T.curr.is('name')) {
-			// TODO: See if it has been defined earlier in the scope
-			structure.type = 'ref';
-			structure.value = readSymbol();
-			skipLast = false;
-		}
-
-		// string, number, regular expression literals
-		// TODO: Might want to do something else here instead depending upon what ends up being done with other stuff
-		else if (T.curr.is('string') || T.curr.is('num') || T.curr.is('regexp')) {
-			structure.type = T.curr.type;
-			structure.value = T.curr;
-		}
-
-		// object instance
-		else if (T.curr.is('operator', 'new')) {
-			T.next(); // skip 'new' operator
-
-			structure.type = 'instance';
-			structure.value = readStatement();
-		}
-
-		// all others
-		else {
-			throw new Error('Unknown structure type ' + T.curr.type + ' with value ' + T.curr.value);
-
-			structure.type = T.curr.type;
-			structure.value = T.curr;
-		}
-
-		skipLast && T.next(); // skip last token in structure
-
-		return structure;
-	}
-
-	function parseFunctionBody() {
-		var block = [];
-
-		while (!T.curr.is('punc', '}') && !T.curr.is('eof')) {
-			// TODO: Probably smarter to forward past the punctuation elsewhere
-			if (T.curr.is('punc', ';')) {
-				T.next();
-				continue;
+			// var …
+			else if (token.is('keyword', 'var')) {
+				token.next();
+				readAssignmentList(true);
+			}
+			// foo()
+			else if (token.is('punc', '(') && token.peek(-1).is('name')) {
+				varName = readReverseName
 			}
 
-			block = block.concat(readStatement());
-		}
+			// foo = …
+			else if (token.is('name') && token.peek(1).is('operator', '=')) {
+				readAssignmentList();
+			}
 
-		return block;
-	}
+			// that’s all folks.
 
-	return parseFunctionBody();
-}
+		} while (!(token = token.next()).is('eof') && !token.is('punc', '}'));
 
-/* -----[ Main ] ----- */
+		env.popScope();
+	}*/
 
-var config = {
-	baseUrl: '/mnt/devel/web/dojo-trunk/',
-
-	moduleMap: {
-		dojo: 'dojo',
-		dijit: 'dijit',
-		dojox: 'dojox'
-	}
-};
-
-var modules = {};
-
-// from dojo loader
-function resolveRelativeId(path) {
-	var result = [], segment, lastSegment;
-	path = path.split('/');
-	while (path.length) {
-		segment = path.shift();
-		if (segment === '..' && result.length && lastSegment != '..') {
-			result.pop();
-		}
-		else if(segment != '.') {
-			result.push((lastSegment = segment));
-		} // else ignore '.'
-	}
-
-	return result.join('/');
-}
-
-function getModuleIdFromPath(path) {
-	var result = resolveRelativeId(path);
-
-	for (var module in config.moduleMap) {
-		var pathPrefix = config.baseUrl + config.moduleMap[module];
-
-		if (pathPrefix.charAt(-1) !== '/') {
-			pathPrefix += '/';
-		}
-
-		if (result.indexOf(pathPrefix) === 0) {
-			result = result.substr(pathPrefix.length);
-			break;
-		}
-	}
-
-	result = result.replace(/^\/|\.js$/g, '');
-
-	// TODO: Update to use more traditional AMD module map pattern
-	return result === 'main' ? module : module + '/' + result;
-}
-
-function processFile(path) {
-	var fileModuleId = getModuleIdFromPath(path),
-		tree = parse(fs.readFileSync(path, 'utf8'));
-
-	console.log(require('util').inspect(tree, null, null));
-}
-
-/*var token;
-var getToken = tokenizer(fs.readFileSync(process.argv[2], 'utf8'));
-
-while ((token = getToken()).type !== 'eof') {
-	console.dir(token);
-}
-
-process.stdout.end();
-process.exit(0);*/
-
-process.argv.slice(2).forEach(function processPath(parent, path) {
-	path = (parent + (path ? '/' + path : '')).replace(/\/{2,}/g, '/');
-
-	var stats = fs.statSync(path);
-
-	if (stats.isDirectory()) {
-		fs.readdirSync(path).forEach(processPath.bind(this, path));
-	}
-	else if (stats.isFile() && /\.js$/.test(path)) {
-		processFile(path);
-	}
+	env.file = File(process.argv[3]);
+	token = scrollableTokenizer(fs.readFileSync(env.file.filename, 'utf8'));
+	readProgram();
 });
+require(['parse']);

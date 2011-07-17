@@ -7,11 +7,12 @@ define([
 	'./lib/Reference',
 	'./lib/scrollableTokenizer',
 	'./lib/env',
+	'./lib/const',
 	'./lib/callHandlers',
 	'./lib/node!util',
 	'./lib/node!fs',
 	'./lib/console'
-], function (dojo, Module, File, Scope, Value, Reference, scrollableTokenizer, env, callHandlers, util, fs) {
+], function (dojo, Module, File, Scope, Value, Reference, scrollableTokenizer, env, consts, callHandlers, util, fs) {
 	// TODO: Get from config file/build script/something else
 	env.config = {
 		baseUrl: '/mnt/devel/web/dojo-trunk/',
@@ -38,7 +39,7 @@ define([
 	/**
 	 * Reads a complete accessor name and returns it as an array of its parts.
 	 */
-	function readName() {
+	function readName(thisValue) {
 		var name = [ token.value ], isUnresolvable = false;
 
 		// TODO: look to jsdoc for @name hint
@@ -64,6 +65,7 @@ define([
 					token.next(2); // skip string & ]
 				}
 				else {
+					console.warn('Skipping complex assignment on ' + name.join('.'));
 					isUnresolvable = true;
 					token.nextUntil('punc', ']');
 				}
@@ -75,15 +77,54 @@ define([
 			}
 		}
 
+		if (!isUnresolvable && name[0] === 'this') {
+			if (thisValue) {
+				name = thisValue.slice(0, -1).concat(name.slice(1));
+			}
+			else {
+				console.info('Assignment to global via \'this\'');
+				name = name.slice(1);
+			}
+		}
+
 		return isUnresolvable ? null : name;
 	}
 
-	function readProgram() {
+	function readArgumentList() {
+		token.expect('punc', '(');
+		token.next();
+
+		var args = [];
+
+		while (!token.is('punc', ')')) {
+			args.push(readStructure());
+
+			if (token.is('punc', ',')) {
+				token.next();
+			}
+		}
+
+		token.next();
+
+		return args;
+	}
+
+	function call(nameOrFunction, args) {
+		console.log(nameOrFunction, 'called with arguments', args);
+	}
+
+	function resolveParameters(fn, args) {
+		console.log('resolve', fn, 'with', args);
+	}
+
+	function readProgram(assignTo) {
+		var level = 0, startIndex = token.index;
+
 		// Step 2, var declarations
 		do {
 			if (token.is('keyword', 'function')) {
 				// function declarations
-				if (!token.peek(-1).is('(') && token.peek(1).is('name')) {
+				if (!token.peek(-1).is('punc', '(') && !token.peek(-1).is('operator') && token.peek(1).is('name')) {
 					token.next();
 					env.scope.addVariable(token.value);
 				}
@@ -105,13 +146,23 @@ define([
 					}
 				} while (token.is('punc', ','));
 			}
-		} while (!token.next().is('eof'));
 
-		token.rewind();
+			else if (token.is('punc', consts.OPEN_PUNC)) {
+				++level;
+			}
+
+			else if (token.is('punc', consts.CLOSE_PUNC)) {
+				--level;
+			}
+
+			token.next();
+		} while (!token.is('eof') && (!token.is('punc', '}') || level > 0));
+
+		token.seekTo(startIndex);
 
 		// Step 3, consume block
 		do {
-			var lhsName, assignTo, startIndex, fn;
+			var lhsName, startIndex, fn;
 
 			// anonymous function constructor
 			if (token.is('keyword', 'new') && token.peek().is('keyword', 'function')) {
@@ -120,9 +171,9 @@ define([
 			else if (token.is('name')) {
 				if (token.peek(-1).is('keyword', 'function')) {
 					// function declaration
-					if (!token.peek(-2).is('punc', '(')) {
+					if (!token.peek(-2).is('punc', '(') && !token.peek(-2).is('operator')) {
 						startIndex = token.index - 1;
-						lhsName = readName();
+						lhsName = readName(assignTo);
 
 						token.seekTo(startIndex);
 						env.scope.setVariableValue(lhsName, readFunction(true));
@@ -136,17 +187,17 @@ define([
 							token.next();
 						}
 
-						call(fn, readArgumentList());
+						resolveParameters(fn, readArgumentList());
 					}
 				}
 				else {
-					lhsName = readName();
+					lhsName = readName(assignTo);
 
 					// assignment
 					if (token.is('operator', '=')) {
 						token.next();
 
-						env.scope.setVariableValue(lhsName, readStructure());
+						env.scope.setVariableValue(lhsName, readStructure(lhsName));
 					}
 
 					// function call
@@ -155,7 +206,17 @@ define([
 					}
 				}
 			}
-		} while (!token.next().is('eof'));
+
+			else if (token.is('punc', consts.OPEN_PUNC)) {
+				++level;
+			}
+
+			else if (token.is('punc', consts.CLOSE_PUNC)) {
+				--level;
+			}
+
+			token.next();
+		} while (!token.is('eof') && (!token.is('punc', '}') || level > 0));
 
 		if (env.scope === env.globalScope) {
 			console.log('Block read complete');
@@ -163,18 +224,25 @@ define([
 		}
 	}
 
-	function readStructure() {
+	/**
+	 * Reads a data structure (object, string, regexp, etc.).
+	 * @param assignTo The variable to which the structure is being assigned. Used to resolve references to “this”
+	 * inside functions.
+	 * @returns {Value|Reference?} A Value, Reference, or null if the structure could not be read (i.e. complex
+	 * expression).
+	 */
+	function readStructure(/**Array?*/ assignTo) {
 		var name;
 
 		// structure is a function
 		if (token.is('keyword', 'function')) {
-			return readFunction();
+			return readFunction(false, assignTo);
 		}
 
 		// structure is a reference to another variable
 		else if (token.is('name')) {
 			var index = token.index;
-			name = readName();
+			name = readName(assignTo);
 
 			// value is a complex expression XXX: maybe do more later
 			if (token.is('operator') && !token.is('operator', '=')) {
@@ -190,24 +258,19 @@ define([
 			return Reference(name);
 		}
 
-		// structure is an empty array literal
-		else if (token.is('punc', '[') && token.peek().is('punc', ']')) {
-			return Value({ type: 'array', value: [] });
-		}
-
 		// structure is an array literal XXX: this seems differently weird from everything else
 		else if (token.is('punc', '[')) {
 			var array = [];
 
 			token.next();
-			do {
+			while (!token.is('punc', ']')) {
 				array.push(readStructure());
 
 				token.expect('punc', { ',': true, ']': true });
 				if (token.is('punc', ',')) {
 					token.next();
 				}
-			} while (!token.is('punc', ']'));
+			}
 
 			token.next();
 
@@ -217,34 +280,29 @@ define([
 			});
 		}
 
-		// structure is an empty object literal
-		else if (token.is('punc', '{') && token.peek(1).is('punc', '}')) {
-			return Value({
-				type: 'object'
-			});
-		}
-
 		// structure is an object literal
-		else if (token.is('punc', '{') && token.peek(1).is('name') && token.peek(2).is('punc', ':') &&
-		         !token.peek(3).is('keyword', { 'for': true, 'do': true, 'while': true })) {
+		else if (token.is('punc', '{') && ((token.peek(1).is('name') && token.peek(2).is('punc', ':') &&
+		         !token.peek(3).is('keyword', { 'for': true, 'do': true, 'while': true })) || token.peek().is('punc', '}'))) {
 
 			var obj = {};
 
 			token.next();
 
-			do {
+			while (!token.is('punc', '}')) {
 				name = token.value;
 				token.next();
 				token.expect('punc', ':');
 				token.next();
 
-				obj[name] = readStructure();
+				assignTo = assignTo.slice(0);
+				assignTo.push(name);
+				obj[name] = readStructure(assignTo);
 
 				token.expect('punc', { ',': true, '}': true });
 				if (token.is('punc', ',')) {
 					token.next();
 				}
-			} while (!token.is('punc', '}'));
+			}
 
 			return Value({
 				type: 'object',
@@ -280,28 +338,40 @@ define([
 		return null;
 	}
 
-	function readFunction(isDeclaration) {
-		env.pushScope();
-
+	function readFunction(isDeclaration, assignTo) {
 		token.expect('keyword', 'function');
 		token.next();
 
-		// parent should have put this in calleeName
-		if (token.is('name')) {
-			if (token.value !== calleeName) {
-				throw Error('calleeName missing');
-			}
+		if (isDeclaration && !token.is('name')) {
+			console.warn('Anonymous function declaration');
+			return null;
+		}
 
+		env.pushScope();
+		var value = Value({ type: 'function' });
+
+		if (!isDeclaration && token.is('name')) {
+			env.scope.addVariable(token.value);
+			env.scope.setVariableValue(token.value, value);
 			token.next();
 		}
 
-		// immediately invoked function expression
-		if (assignTo === undefined) {
-			readParameterList();
-			readFunctionBody();
+		token.expect('punc', '(');
+		token.next();
+		while (!token.is('punc', ')')) {
+			env.scope.addVariable(token.value);
+			token.next();
+		}
+
+		readProgram(assignTo);
+
+		if (token.is('punc', '}')) {
+			token.next();
 		}
 
 		env.popScope();
+
+		return value;
 	}
 
 /*

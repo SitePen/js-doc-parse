@@ -5,6 +5,7 @@ define([
 	'./lib/Scope',
 	'./lib/Value',
 	'./lib/Reference',
+	'./lib/Parameter',
 	'./lib/scrollableTokenizer',
 	'./lib/env',
 	'./lib/const',
@@ -12,7 +13,7 @@ define([
 	'./lib/node!util',
 	'./lib/node!fs',
 	'./lib/console'
-], function (dojo, Module, File, Scope, Value, Reference, scrollableTokenizer, env, consts, callHandlers, util, fs) {
+], function (dojo, Module, File, Scope, Value, Reference, Parameter, scrollableTokenizer, env, consts, callHandlers, util, fs) {
 	// TODO: Get from config file/build script/something else
 	env.config = {
 		baseUrl: '/mnt/devel/web/dojo-trunk/',
@@ -38,6 +39,7 @@ define([
 
 	/**
 	 * Reads a complete accessor name and returns it as an array of its parts.
+	 * @returns {Array}
 	 */
 	function readName(thisValue) {
 		var name = [ token.value ], isUnresolvable = false;
@@ -90,6 +92,10 @@ define([
 		return isUnresolvable ? null : name;
 	}
 
+	/**
+	 * Reads an argument list and returns it as an array of structures.
+	 * @returns {Array}
+	 */
 	function readArgumentList() {
 		token.expect('punc', '(');
 		token.next();
@@ -97,7 +103,7 @@ define([
 		var args = [];
 
 		while (!token.is('punc', ')')) {
-			args.push(readStructure());
+			args.push(readValue());
 
 			if (token.is('punc', ',')) {
 				token.next();
@@ -117,7 +123,13 @@ define([
 		console.log('resolve', fn, 'with', args);
 	}
 
-	function readProgram(assignTo) {
+	/**
+	 * Reads a JavaScript program.
+	 * @param assignTo If the program being read is a function body that is being assigned to a variable, this is the
+	 * name of the variable.
+	 * @param value If the program being read is a function body, this is the Value representing the function object.
+	 */
+	function readProgram(/**Array?*/ assignTo, /**Value?*/ value) {
 		var level = 0, startIndex = token.index;
 
 		// Step 2, var declarations
@@ -130,7 +142,7 @@ define([
 				}
 
 				// TODO: read a Statement instead
-				token.nextUntil('punc', '{').nextUntil('punc', '}');
+				token.nextUntil('punc', '{').next().nextUntil('punc', '}');
 			}
 
 			else if (token.is('keyword', 'var')) {
@@ -164,30 +176,37 @@ define([
 		do {
 			var lhsName, startIndex, fn;
 
+			// return value
+			if (token.is('keyword', 'return') && value) {
+				token.next();
+				value.returns.push(readValue());
+			}
+
 			// anonymous function constructor
-			if (token.is('keyword', 'new') && token.peek().is('keyword', 'function')) {
+			else if (token.is('keyword', 'new') && token.peek().is('keyword', 'function')) {
 				console.log('XXX new function constructor');
 			}
+
+			// immediately invoked function expression
+			else if (token.is('keyword', 'function') && (token.peek(-1).is('operator', '!') || token.peek(-1).is('punc', '('))) {
+				fn = readFunction();
+
+				if (token.is('punc', ')')) {
+					token.next();
+				}
+
+				resolveParameters(fn, readArgumentList());
+			}
+
 			else if (token.is('name')) {
+				// function declaration
 				if (token.peek(-1).is('keyword', 'function')) {
-					// function declaration
 					if (!token.peek(-2).is('punc', '(') && !token.peek(-2).is('operator')) {
 						startIndex = token.index - 1;
 						lhsName = readName(assignTo);
 
 						token.seekTo(startIndex);
 						env.scope.setVariableValue(lhsName, readFunction(true));
-					}
-					// immediately invoked function expression
-					else {
-						token.seekTo(token.index - 1);
-						fn = readFunction();
-
-						if (token.is('punc', ')')) {
-							token.next();
-						}
-
-						resolveParameters(fn, readArgumentList());
 					}
 				}
 				else {
@@ -197,7 +216,7 @@ define([
 					if (token.is('operator', '=')) {
 						token.next();
 
-						env.scope.setVariableValue(lhsName, readStructure(lhsName));
+						env.scope.setVariableValue(lhsName, readValue(lhsName));
 					}
 
 					// function call
@@ -225,13 +244,12 @@ define([
 	}
 
 	/**
-	 * Reads a data structure (object, string, regexp, etc.).
-	 * @param assignTo The variable to which the structure is being assigned. Used to resolve references to “this”
+	 * Reads a value (object, string, regexp, etc.).
+	 * @param assignTo The variable to which the value is being assigned. Used to resolve references to “this”
 	 * inside functions.
-	 * @returns {Value|Reference?} A Value, Reference, or null if the structure could not be read (i.e. complex
-	 * expression).
+	 * @returns {Value|Reference?} A Value, Reference, or null if the value could not be read (complex expression).
 	 */
-	function readStructure(/**Array?*/ assignTo) {
+	function readValue(/**Array?*/ assignTo) {
 		var name;
 
 		// structure is a function
@@ -264,7 +282,7 @@ define([
 
 			token.next();
 			while (!token.is('punc', ']')) {
-				array.push(readStructure());
+				array.push(readValue());
 
 				token.expect('punc', { ',': true, ']': true });
 				if (token.is('punc', ',')) {
@@ -294,9 +312,11 @@ define([
 				token.expect('punc', ':');
 				token.next();
 
-				assignTo = assignTo.slice(0);
-				assignTo.push(name);
-				obj[name] = readStructure(assignTo);
+				if (assignTo) {
+					assignTo = assignTo.slice(0);
+					assignTo.push(name);
+				}
+				obj[name] = readValue(assignTo);
 
 				token.expect('punc', { ',': true, '}': true });
 				if (token.is('punc', ',')) {
@@ -338,7 +358,7 @@ define([
 		return null;
 	}
 
-	function readFunction(isDeclaration, assignTo) {
+	function readFunction(/**boolean*/ isDeclaration, /**Array?*/ assignTo) {
 		token.expect('keyword', 'function');
 		token.next();
 
@@ -350,9 +370,11 @@ define([
 		env.pushScope();
 		var value = Value({ type: 'function' });
 
-		if (!isDeclaration && token.is('name')) {
-			env.scope.addVariable(token.value);
-			env.scope.setVariableValue(token.value, value);
+		if (token.is('name')) {
+			if (!isDeclaration) {
+				env.scope.addVariable(token.value);
+				env.scope.setVariableValue(token.value, value);
+			}
 			token.next();
 		}
 
@@ -360,10 +382,17 @@ define([
 		token.next();
 		while (!token.is('punc', ')')) {
 			env.scope.addVariable(token.value);
+			value.parameters.push(Parameter({
+				name: token.value
+			}));
 			token.next();
+
+			if (token.is('punc', ',')) {
+				token.next();
+			}
 		}
 
-		readProgram(assignTo);
+		readProgram(assignTo, value);
 
 		if (token.is('punc', '}')) {
 			token.next();

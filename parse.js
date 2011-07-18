@@ -93,7 +93,7 @@ define([
 	}
 
 	/**
-	 * Reads an argument list and returns it as an array of structures.
+	 * Reads an argument list and returns it as an array of Values.
 	 * @returns {Array}
 	 */
 	function readArgumentList() {
@@ -120,7 +120,9 @@ define([
 	}
 
 	function resolveParameters(fn, args) {
-		console.log('resolve', fn, 'with', args);
+		for (var i = 0, j = args.length; i < j; ++i) {
+			fn.scope.vars[fn.parameters[i].name] = args[i];
+		}
 	}
 
 	/**
@@ -142,7 +144,11 @@ define([
 				}
 
 				// TODO: read a Statement instead
-				token.nextUntil('punc', '{').next().nextUntil('punc', '}');
+				token.nextUntil('punc', '{').next();
+				// XXX: maybe nextUntil should stop at the current token if it matches instead of advancing immediately
+				if (!token.is('punc', '}')) {
+					token.nextUntil('punc', '}');
+				}
 			}
 
 			else if (token.is('keyword', 'var')) {
@@ -184,7 +190,7 @@ define([
 
 			// anonymous function constructor
 			else if (token.is('keyword', 'new') && token.peek().is('keyword', 'function')) {
-				console.log('XXX new function constructor');
+				console.log('XXX: unassigned new function constructor');
 			}
 
 			// immediately invoked function expression
@@ -252,12 +258,12 @@ define([
 	function readValue(/**Array?*/ assignTo) {
 		var name;
 
-		// structure is a function
+		// value is a function
 		if (token.is('keyword', 'function')) {
 			return readFunction(false, assignTo);
 		}
 
-		// structure is a reference to another variable
+		// value is a reference to another variable
 		else if (token.is('name')) {
 			var index = token.index;
 			name = readName(assignTo);
@@ -276,7 +282,7 @@ define([
 			return Reference(name);
 		}
 
-		// structure is an array literal XXX: this seems differently weird from everything else
+		// value is an array literal XXX: this seems differently weird from everything else
 		else if (token.is('punc', '[')) {
 			var array = [];
 
@@ -298,7 +304,7 @@ define([
 			});
 		}
 
-		// structure is an object literal
+		// value is an object literal
 		else if (token.is('punc', '{') && ((token.peek(1).is('name') && token.peek(2).is('punc', ':') &&
 		         !token.peek(3).is('keyword', { 'for': true, 'do': true, 'while': true })) || token.peek().is('punc', '}'))) {
 
@@ -330,13 +336,18 @@ define([
 			});
 		}
 
-		// structure is an object instance
-		else if (token.is('keyword', 'new')) {
+		// value is an object instance
+		else if (token.is('operator', 'new')) {
 			token.next();
-			console.log('XXX: object instance');
+			name = readName();
+
+			return Value({
+				type: 'instance',
+				value: call(name, token.is('punc', '(') ? readArgumentList() : []) || Reference(name)
+			});
 		}
 
-		// structure is a string, number, boolean, regexp, null, or undefined
+		// value is a string, number, boolean, regexp, null, or undefined
 		else if (token.is('string') || token.is('num') || token.is('regexp') || token.is('atom')) {
 
 			// value is a complex expression XXX: maybe do more later
@@ -354,7 +365,7 @@ define([
 			return value;
 		}
 
-		console.warn('Could not read structure ' + token.type + ' ' + token.value + ' at ' + token.line + ':' + token.column);
+		console.warn('Could not read Value ' + token.type + ' ' + token.value + ' at ' + token.line + ':' + token.column);
 		return null;
 	}
 
@@ -367,8 +378,7 @@ define([
 			return null;
 		}
 
-		env.pushScope();
-		var value = Value({ type: 'function' });
+		var value = Value({ type: 'function', scope: env.pushScope() });
 
 		if (token.is('name')) {
 			if (!isDeclaration) {

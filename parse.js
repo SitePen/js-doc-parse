@@ -1,4 +1,3 @@
-define(['./lib/naiveParser'], function (parser) {
-	parser.parse(process.argv[3]);
+define(['./lib/bdParser'], function (parse) {
+	parse(process.argv[3]);
 });
-require(['parse']);

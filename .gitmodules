@@ -1,6 +1,6 @@
 [submodule "dojo"]
 	path = dojo
 	url = https://github.com/dojo/dojo.git
-[submodule "uglify-js"]
-	path = uglify-js
-	url = https://github.com/mishoo/UglifyJS.git
+[submodule "bdParse"]
+	path = bdParse
+	url = https://github.com/csnover/bdParse

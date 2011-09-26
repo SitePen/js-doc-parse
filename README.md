@@ -9,9 +9,11 @@ New BSD License © 2011 Colin Snover <http://zetafleet.com>
 Dependencies
 ------------
 
-[UglifyJS](https://github.com/mishoo/UglifyJS) - Tokenizer
+[dojo](https://github.com/dojo/dojo) - AMD loader & helper library
+[bdParse](https://github.com/altoviso/bdParse) - Tokenizer & AST parser
 
 Instructions
 ------------
 
-Run `node parse.js tests/` to get some data structure output for each of the files. There is nothing else yet.
+1. `git clone --recursive https://github.com/csnover/js-doc-parse.git`
+2. Run `node parse.js tests/<filename>` to get some data structure output for a file. There is nothing else yet.

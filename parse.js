@@ -1,9 +1,10 @@
 define([ './lib/bdParser', './lib/Module', './lib/node!fs', './lib/node!util', './lib/console' ], function (parse, Module, fs, util) {
 	require.rawConfig.commandLineArgs.slice(2).forEach(function processPath(parent, path) {
 		path = (parent + (path ? '/' + path : '')).replace(/\/{2,}/g, '/');
-		
+		var stats;
+
 		try {
-			var stats = fs.statSync(path);
+			stats = fs.statSync(path);
 		}
 		catch (error) {
 			console.error(error);
@@ -17,6 +18,6 @@ define([ './lib/bdParser', './lib/Module', './lib/node!fs', './lib/node!util', '
 			parse(path);
 		}
 	});
-	
+
 	console.log("\nModules:\n", util.inspect(Module.getAll(), null, 6));
 });

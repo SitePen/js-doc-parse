@@ -1,4 +1,6 @@
-define([ './lib/bdParser', './lib/File', './lib/Module', './lib/node!fs', './lib/node!util', './lib/console' ], function (parse, File, Module, fs, util) {
+define([ './lib/bdParser', './lib/env', './lib/File', './lib/Module', './lib/node!fs', './lib/node!util', './lib/console' ], function (parse, env, File, Module, fs, util) {
+	env.parse = parse;
+
 	require.rawConfig.commandLineArgs.slice(2).forEach(function processPath(parent, path) {
 		path = (parent + (path ? '/' + path : '')).replace(/\/{2,}/g, '/');
 		var stats;
@@ -15,7 +17,7 @@ define([ './lib/bdParser', './lib/File', './lib/Module', './lib/node!fs', './lib
 			fs.readdirSync(path).forEach(processPath.bind(this, path));
 		}
 		else if (stats.isFile() && /\.js$/.test(path)) {
-			parse(path);
+			Module.getByFile(new File(path));
 		}
 	});
 

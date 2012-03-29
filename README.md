@@ -9,7 +9,7 @@ New BSD License © 2011-2012 Colin Snover <http://zetafleet.com>
 Dependencies
 ------------
 
-[dojo](https://github.com/dojo/dojo) – AMD loader & helper library
+[dojo](https://github.com/dojo/dojo) – AMD loader & helper library  
 [esprima](https://github.com/ariya/esprima) – ECMAScript parser
 
 Instructions

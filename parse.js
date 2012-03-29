@@ -1,4 +1,4 @@
-define([ './lib/bdParser', './lib/env', './lib/File', './lib/Module', './lib/node!fs', './lib/node!util', './lib/console' ], function (parse, env, File, Module, fs, util) {
+define([ './lib/esprimaParser', './lib/env', './lib/File', './lib/Module', './lib/node!fs', './lib/node!util', './lib/console' ], function (parse, env, File, Module, fs, util) {
 	env.parse = parse;
 
 	require.rawConfig.commandLineArgs.slice(2).forEach(function processPath(parent, path) {
@@ -17,7 +17,8 @@ define([ './lib/bdParser', './lib/env', './lib/File', './lib/Module', './lib/nod
 			fs.readdirSync(path).forEach(processPath.bind(this, path));
 		}
 		else if (stats.isFile() && /\.js$/.test(path)) {
-			Module.getByFile(new File(path));
+			//Module.getByFile(new File(path));
+			console.log(util.inspect(parse(fs.readFileSync(path, 'utf-8')), null, null));
 		}
 	});
 

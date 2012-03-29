@@ -1,6 +1,6 @@
 [submodule "dojo"]
 	path = dojo
 	url = https://github.com/dojo/dojo.git
-[submodule "bdParse"]
-	path = bdParse
-	url = https://github.com/csnover/bdParse
+[submodule "esprima"]
+	path = esprima
+	url = https://github.com/ariya/esprima.git

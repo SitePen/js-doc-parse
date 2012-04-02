@@ -1,0 +1,1 @@
+var a = true, x = a && a ? "pass" : "fail";

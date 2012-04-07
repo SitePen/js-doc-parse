@@ -13,3 +13,17 @@ if (x === a) {
 else {
 	c = "fail";
 }
+
+switch (x) {
+case "foo":
+case "bar":
+case "baz":
+	c = "fail";
+	break;
+case "pass":
+	c = "pass";
+	break;
+default:
+	c = "fail";
+	break;
+}

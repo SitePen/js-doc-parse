@@ -1,4 +1,12 @@
-define([ './lib/env', './lib/File', './lib/Module', './lib/node!fs', './lib/node!util', './lib/esprimaParser' ], function (env, File, Module, fs, util) {
+define([
+	'./lib/env',
+	'./lib/File',
+	'./lib/Module',
+	'./lib/node!fs',
+	'./lib/node!util',
+	'./lib/console',
+	'./lib/esprimaParser'
+], function (env, File, Module, fs, util, console) {
 	require.rawConfig.commandLineArgs.slice(2).forEach(function processPath(parent, path) {
 		path = (parent + (path ? '/' + path : '')).replace(/\/{2,}/g, '/');
 		var stats;
@@ -15,9 +23,7 @@ define([ './lib/env', './lib/File', './lib/Module', './lib/node!fs', './lib/node
 			fs.readdirSync(path).forEach(processPath.bind(this, path));
 		}
 		else if (stats.isFile() && /\.js$/.test(path)) {
-			env.file = new File(path);
-			env.parse(env.file.source);
-			env.file = undefined;
+			Module.getByFile(new File(path));
 		}
 	});
 

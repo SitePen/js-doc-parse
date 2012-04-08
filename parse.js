@@ -27,5 +27,7 @@ define([
 		}
 	});
 
-	console.log("\nModules:\n", util.inspect(Module.getAll(), null, 6));
+//	console.log("\nModules:\n", util.inspect(Module.getAll(), null, 6));
+
+	console.log(Module.get("dojo/_base/NodeList").value);
 });

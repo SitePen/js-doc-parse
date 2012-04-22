@@ -8,6 +8,12 @@ define({
 	// Additional custom environments can be used by passing the module ID of a custom environment module.
 	environments: [ "amd", "browser" ],
 
+	// The call handler registries to use. The following processors are provided by default:
+	//     - amd: Handles AMD define/require calls.
+	//     - dojo: Handles core Dojo language functions.
+	// Additional custom handler registries can be used by passing the module ID of a custom handler registry.
+	callHandlers: [ "amd", "dojo" ],
+
 	// The inline documentation processor(s) to use. The following processors are provided by default:
 	//    - dojodoc: A parser for the Dojo documentation format
 	//    - jsdoc: A parser for the jsdoc documentation format

@@ -23,11 +23,12 @@ define([
 			fs.readdirSync(path).forEach(processPath.bind(this, path));
 		}
 		else if (stats.isFile() && /\.js$/.test(path)) {
+			// TODO: This whole thing revolves around Modules because that's what an AMD system uses, but we really
+			// ought to isolate modules to the AMD callHandler so this tool can be used as an even more general
+			// documentation parser.
 			Module.getByFile(new File(path));
 		}
 	});
-
-	console.log(util.inspect(env.globalScope, null, null));
 
 	env.exporters.forEach(function (exporter) {
 		exporter.run(exporter.config);

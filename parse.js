@@ -27,7 +27,9 @@ define([
 		}
 	});
 
-	console.log("\nModules:\n", util.inspect(Module.getAll(), null, 6));
+	console.log(util.inspect(env.globalScope, null, null));
 
-//	console.log(Module.get("dojo/_base/NodeList").value);
+	env.exporters.forEach(function (exporter) {
+		exporter.run(exporter.config);
+	});
 });

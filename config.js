@@ -17,9 +17,14 @@ define({
 	// The exporter(s) to use. The following exporters are provided by default:
 	//    - dojov1: An exporter for the v1 Dojo API browser.
 	// Additional custom exporters can be used by passing the module ID of a custom exporter module.
-	exporters: [ "dojov1" ],
+	// It is also possible to pass additional configuration options to each exporter by passing an object instead
+	// of a string, with the following properties:
+	//    - id: The module ID of the exporter.
+	//    - config: Arbitrary exporter configuration object, passed as an argument to the exporter function.
+	exporters: [ { id: "dojov1", config: { outputAs: "xml" } } ],
 
 	// Configuration data for module ID resolution and path remapping within the parser.
+	// TODO: Document
 	moduleConfig: {
 		basePath: '',
 		prefixMap: {}

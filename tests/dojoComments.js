@@ -1,7 +1,9 @@
-function fn(/*foo*/ foo, /**bar*/ bar) {
+function fn(/*foo*/ foo, /**bar*/ bar, baz) {
 	// function comment
 	// many lines
 	// one function
 
-	return [ foo, bar ];
+	return [ foo, // Array
+		bar
+	];
 }

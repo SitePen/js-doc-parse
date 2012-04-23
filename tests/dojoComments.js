@@ -1,7 +1,17 @@
 function fn(/*foo*/ foo, /**bar*/ bar, baz) {
-	// function comment
-	// many lines
-	// one function
+	//	summary:
+	//		This is a function.
+	//	returns:
+	//		Some data, perhaps.
+
+	foo = {
+		// summary:
+		//		This is an object.
+
+		// fooBar: SuperBoolean
+		//		This is a property.
+		fooBar: true
+	};
 
 	return [ foo, // Array
 		bar

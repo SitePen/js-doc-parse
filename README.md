@@ -13,7 +13,7 @@ Why is this library special?
    needs to be abstracted for it to work on Rhino and in the browser, too, and I plan on doing just that.)
 2. It isn’t lazy! js-doc-parse completely parses the actual JavaScript source code to extract API details instead of
    just running some crappy regular expressions over the source text to pluck out comment blocks.
-3. [Highly extensible](https://github.com/csnover/js-doc-parse/blob/esprima/config.js), with initially planned support
+3. [Highly extensible](https://github.com/csnover/js-doc-parse/blob/master/config.js), with initially planned support
    for two code commenting styles (dojodoc and jsdoc).
 
 Wait, _highly_ extensible? Tell me more!

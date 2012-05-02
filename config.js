@@ -33,6 +33,6 @@ define({
 	// TODO: Document
 	moduleConfig: {
 		basePath: '',
-		prefixMap: {}
+		prefixMap: { dojo: 'dojo', dijit: 'dijit' }
 	}
 });

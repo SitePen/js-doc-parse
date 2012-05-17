@@ -31,8 +31,14 @@ define({
 
 	// Configuration data for module ID resolution and path remapping within the parser.
 	// TODO: Document
-	moduleConfig: {
+	environmentConfig: {
 		basePath: '',
-		prefixMap: { dojo: 'dojo', dijit: 'dijit' }
+		packages: {
+			dojo: 'dojo',
+			dijit: 'dijit',
+			dojox: 'dojox',
+			doh: 'util/doh'
+		},
+		excludePaths: [ /\/tests\// ]
 	}
 });

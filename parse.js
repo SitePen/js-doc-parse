@@ -26,7 +26,17 @@ define([
 			// TODO: This whole thing revolves around Modules because that's what an AMD system uses, but we really
 			// ought to isolate modules to the AMD callHandler so this tool can be used as an even more general
 			// documentation parser.
-			Module.getByFile(new File(path));
+
+			// Skip excluded paths
+			if (env.config.excludePaths.some(function (exclude) {
+				return typeof exclude === 'string' ?
+					path.indexOf(exclude) === 0 :
+					exclude.test(path);
+			})) {
+				return;
+			}
+
+			Module.getByFile(new File(fs.realpathSync(path)));
 		}
 	});
 

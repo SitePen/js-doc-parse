@@ -39,6 +39,6 @@ define({
 			dojox: 'dojox',
 			doh: 'util/doh'
 		},
-		excludePaths: [ /\/tests\// ]
+		excludePaths: [ /\/tests\//, /\/nls\// ]
 	}
 });

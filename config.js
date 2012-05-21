@@ -29,6 +29,12 @@ define({
 	//    - config: Arbitrary exporter configuration object, passed as an argument to the exporter function.
 	exporters: [ { id: "dojov1", config: { outputAs: "xml" } } ],
 
+	show: {
+		warn:  true,
+		info:  false,
+		debug: false
+	},
+
 	// Configuration data for module ID resolution and path remapping within the parser.
 	// TODO: Document
 	environmentConfig: {

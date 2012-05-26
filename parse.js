@@ -8,6 +8,10 @@ define([
 	'./lib/esprimaParser'
 ], function (env, File, Module, fs, util, console) {
 	require.rawConfig.commandLineArgs.slice(2).forEach(function processPath(parent, path) {
+		if (typeof path === 'number') {
+			path = '';
+		}
+
 		path = (parent + (path ? '/' + path : '')).replace(/\/{2,}/g, '/');
 		var stats;
 

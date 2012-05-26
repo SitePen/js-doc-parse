@@ -45,6 +45,6 @@ define({
 			dojox: 'dojox',
 			doh: 'util/doh'
 		},
-		excludePaths: [ /\/tests\//, /\/nls\//, /dojox\/(?:app|dgauges|calendar|gfx3d|mobile)\// ]
+		excludePaths: [ /\/tests\//, /\/nls\//, /dojox\/(?:app|charting)\// ]
 	}
 });

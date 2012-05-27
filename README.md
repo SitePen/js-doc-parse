@@ -53,7 +53,8 @@ Dependencies
 ------------
 
 [dojo](https://github.com/dojo/dojo) – AMD loader & helper library  
-[esprima](https://github.com/ariya/esprima) – ECMAScript parser
+[esprima](https://github.com/ariya/esprima) – ECMAScript parser  
+[marked](https://github.com/chjj/marked) – Markdown parser
 
 Instructions
 ------------

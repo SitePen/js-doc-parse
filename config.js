@@ -45,6 +45,18 @@ define({
 			dojox: 'dojox',
 			doh: 'util/doh'
 		},
-		excludePaths: [ /\/tests\//, /\/nls\//, /dojox\/(?:app|charting)\// ]
+		excludePaths: [
+			// Non-API code
+			/\/(?:tests|nls|demos)\//,
+
+			// Contains invalid docblock code, but cannot be modified because it is an external project
+			/dojox\/app\//,
+
+			// Overwrites AMD functions
+			/dojox\/mobile\/deviceTheme/,
+
+			// Overwrites dojo.declare
+			/dojox\/lang\/(?:docs|typed)/
+		]
 	}
 });

@@ -24,7 +24,7 @@ define([
 		}
 
 		if (stats.isDirectory()) {
-			fs.readdirSync(path).forEach(processPath.bind(this, path));
+			fs.readdirSync(path).sort().forEach(processPath.bind(this, path));
 		}
 		else if (stats.isFile() && /\.js$/.test(path)) {
 			// TODO: This whole thing revolves around Modules because that's what an AMD system uses, but we really

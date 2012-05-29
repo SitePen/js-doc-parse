@@ -7,6 +7,8 @@ define([
 	'./lib/console',
 	'./lib/esprimaParser'
 ], function (env, File, Module, fs, util, console) {
+	console.status('Processing scripts…');
+
 	require.rawConfig.commandLineArgs.slice(2).forEach(function processPath(parent, path) {
 		if (typeof path === 'number') {
 			path = '';
@@ -44,7 +46,11 @@ define([
 		}
 	});
 
+	console.status('Exporting results…');
+
 	env.exporters.forEach(function (exporter) {
 		exporter.run(exporter.config);
 	});
+
+	console.status('Done!');
 });

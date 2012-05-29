@@ -30,9 +30,10 @@ define({
 	exporters: [ { id: 'dojov1', config: { file: 'details.xml' } } ],
 
 	show: {
-		warn:  false,
-		info:  false,
-		debug: false
+		warn:   false,
+		info:   false,
+		debug:  false,
+		memory: true
 	},
 
 	// Configuration data for module ID resolution and path remapping within the parser.

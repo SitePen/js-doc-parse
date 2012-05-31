@@ -4,7 +4,8 @@ js-doc-parse
 A library for parsing JavaScript files and extracting inline documentation. Designed primarily for use with the Dojo
 Toolkit, but extensible enough to work with any application or documentation format.
 
-New BSD License © 2011–2012 Colin Snover <http://zetafleet.com>.
+New BSD License © 2011–2012 Colin Snover <http://zetafleet.com>. Released under
+[Dojo Foundation CLA](http://dojofoundation.org/about/cla).
 
 Why is this library special?
 ----------------------------

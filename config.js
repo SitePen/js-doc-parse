@@ -53,9 +53,6 @@ define({
 			// Contains invalid docblock code, but cannot be modified because it is an external project
 			/dojox\/app\//,
 
-			// Overwrites AMD functions
-			/dojox\/mobile\/deviceTheme/,
-
 			// Overwrites dojo.declare
 			/dojox\/lang\/(?:docs|typed)/
 		]

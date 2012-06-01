@@ -4,18 +4,20 @@ define([
 	'./lib/Module',
 	'./lib/node!fs',
 	'./lib/node!util',
+	'./lib/node!path',
 	'./lib/console',
 	'./lib/esprimaParser'
-], function (env, File, Module, fs, util, console) {
+], function (env, File, Module, fs, util, pathUtil, console) {
 	env.ready(function(){
 		console.status('Processing scripts…');
 
-		require.rawConfig.commandLineArgs.slice(2).forEach(function processPath(parent, path) {
+		// For some reason commandLineArgs is an array of arrays; flatten them all
+		[].concat.apply([], require.rawConfig.commandLineArgs.slice(2)).forEach(function processPath(parent, path) {
 			if (typeof path === 'number') {
 				path = '';
 			}
 
-			path = (parent + (path ? '/' + path : '')).replace(/\/{2,}/g, '/');
+			path = pathUtil.join(parent, path);
 			var stats;
 
 			try {

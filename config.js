@@ -50,9 +50,6 @@ define({
 			// Non-API code
 			/\/(?:tests|nls|demos)\//,
 
-			// Contains invalid docblock code, but cannot be modified because it is an external project
-			/dojox\/app\//,
-
 			// Overwrites dojo.declare
 			/dojox\/lang\/(?:docs|typed)/
 		]

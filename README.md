@@ -60,7 +60,7 @@ Dependencies
 Instructions
 ------------
 
-1. `git clone --recursive https://github.com/csnover/js-doc-parse.git`
+1. `git clone --recursive https://github.com/SitePen/js-doc-parse.git`
 2. Edit `config.js` as appropriate for your environment. For parsing Dojo Toolkit source, you should only need to set
    `environmentConfig.basePath` to the path to your Dojo 1.8 checkout.
 3. Run `./parse.sh file-or-directory [file-or-directory…]` to generate documentation for the files/directories you’ve
